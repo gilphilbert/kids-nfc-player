@@ -51,7 +51,7 @@ void my_print( lv_log_level_t level, const char * buf ) {
 
 void erasingCard();
 void writingCard();
-void displayFileList();
+void showMenu();
 
 unsigned long lastTouch;
 #define SCREEN_OFF_DELAY 30  //delay in seconds
@@ -68,6 +68,7 @@ static uint32_t my_tick(void) {
 FT6336U ft6336u(I2C_SDA, I2C_SCL, RST_N_PIN, INT_N_PIN);
 
 unsigned long last_touches[2] = {0, 0};
+
 
 void my_touchpad_read( lv_indev_t * indev, lv_indev_data_t * data ) {
   FT6336U_TouchPointType tp = ft6336u.scan();
@@ -101,7 +102,8 @@ void my_touchpad_read( lv_indev_t * indev, lv_indev_data_t * data ) {
       //triple-tap!
       Serial.println("Triple-tap");
       if (!Player::isPlaying())
-        displayFileList();
+        //displayFileList();
+        showMenu();
     }
     last_touches[1] = last_touches[0];
     last_touches[0] = millis();
@@ -302,7 +304,7 @@ void showSong(audioMetadata _md) {
 
   lv_obj_align_to(progressBar, artbg, LV_ALIGN_OUT_RIGHT_BOTTOM, 25, -15);
   lv_bar_set_range(progressBar, 0, _md.duration);
-  lv_bar_set_value(progressBar, 0, LV_ANIM_OFF);
+  lv_bar_set_value(progressBar, 0, false);
 
   lv_obj_t * play_button = lv_obj_create(container);
   lv_obj_set_width(play_button, 60);
@@ -371,7 +373,7 @@ void showUpdateScreen() {
 
   lv_obj_align(progressBar, LV_ALIGN_CENTER, 0, -15);
   lv_bar_set_range(progressBar, 0, 100);
-  lv_bar_set_value(progressBar, 0, LV_ANIM_OFF);
+  lv_bar_set_value(progressBar, 0, false);
 
   lv_obj_t * label = lv_label_create(container);
   lv_label_set_text(label, "Updating, firmware, this will only take a moment");
@@ -385,41 +387,9 @@ void showUpdateScreen() {
 
 void updateProgress(size_t current, size_t total) {
   lv_bar_set_range(progressBar, 0, total);
-  lv_bar_set_value(progressBar, current, LV_ANIM_OFF);
+  lv_bar_set_value(progressBar, current, false);
   lv_timer_handler();
   delay(2);
-}
-
-static void cancel_write(lv_event_t * e) {
-  scanCard();
-  writing = false;
-}
-
-static void fileSelected(lv_event_t * e) {\
-  lv_obj_t * ta = (lv_obj_t *)lv_event_get_target(e);
-  const char *te = lv_list_get_button_text(mainFileList, ta);
-
-  lv_obj_t * container = lv_obj_create(NULL);
-
-  lv_obj_set_style_bg_color(container, blue, LV_PART_MAIN);
-
-  lv_obj_t *logo = lv_image_create(container);
-  lv_image_set_src(logo, &nfc_card);
-  lv_obj_align(logo, LV_ALIGN_CENTER, 0, -10);
-
-  lv_obj_t *label = lv_label_create( container );
-  lv_label_set_text( label, "Present card to write" );
-  lv_obj_set_style_text_font(label, &fnt_sora_medium_18, LV_PART_MAIN);
-  lv_obj_align( label, LV_ALIGN_CENTER, 0, 0 );
-  lv_obj_set_style_text_color(label, white, LV_PART_MAIN);
-  lv_obj_align_to(label, logo, LV_ALIGN_BOTTOM_MID, 0, 50);
-
-  mainFileList = NULL;
-
-  writing = true;
-  fileToWrite = te;
-
-  lv_screen_load(container);
 }
 
 void erasingCard() {
@@ -480,54 +450,161 @@ void cardWriteSuccess() {
   lv_screen_load(container);
 }
 
-void displayFileList() {
+static void cancel_write(lv_event_t * e) {
+  scanCard();
+  writing = false;
+  fileToWrite = "";
+}
+
+static void fileSelected(lv_event_t * e) {
+  lv_obj_t * ta = (lv_obj_t *)lv_event_get_target(e);
+  const char *te = lv_label_get_text(ta);
+
   lv_obj_t * container = lv_obj_create(NULL);
+
   lv_obj_set_style_bg_color(container, blue, LV_PART_MAIN);
 
-  lv_obj_t * button = lv_button_create(container);
-  lv_obj_t * label = lv_label_create(button);
-  lv_label_set_text(label, "< Cancel");
-  lv_obj_add_event_cb(button, cancel_write, LV_EVENT_CLICKED, NULL);
+  lv_obj_t *logo = lv_image_create(container);
+  lv_image_set_src(logo, &nfc_card);
+  lv_obj_align(logo, LV_ALIGN_CENTER, 0, -40);
 
-  lv_obj_t * file_list = lv_list_create(container);
-  lv_obj_set_size(file_list, LV_PCT(100), 400);
-  lv_obj_align(file_list, LV_ALIGN_TOP_LEFT, 0, 30);
-  lv_obj_set_style_border_width(file_list, 0, LV_PART_MAIN);
-  lv_obj_set_style_radius(file_list, 0, LV_PART_MAIN);
-  lv_obj_set_style_bg_color(file_list, blue, LV_PART_MAIN);
-/*
-  lv_obj_t * header = lv_list_add_text(file_list, "Select a file");
-  lv_obj_set_style_bg_color(header, white, LV_PART_MAIN);
-  lv_obj_set_style_bg_opa(header, 32, LV_PART_MAIN);
-  lv_obj_set_style_text_font(header, &fnt_sora_medium_16, LV_PART_MAIN);
-  lv_obj_set_style_text_color(header, white, LV_PART_MAIN);
-  lv_obj_set_style_text_opa(header, 192, LV_PART_MAIN);
-  lv_obj_set_style_text_font(header, &fnt_sora_medium_16, LV_PART_MAIN);
-  lv_obj_set_style_margin_top(header, 10, LV_PART_MAIN);
-  lv_obj_set_style_pad_top(header, 7, LV_PART_MAIN);
-  lv_obj_set_style_pad_bottom(header, 7, LV_PART_MAIN);
-*/
+  lv_obj_t *label = lv_label_create( container );
+  lv_label_set_text( label, "Present card to write" );
+  lv_obj_set_style_text_font(label, &fnt_sora_medium_18, LV_PART_MAIN);
+  lv_obj_align( label, LV_ALIGN_CENTER, 0, 0 );
+  lv_obj_set_style_text_color(label, white, LV_PART_MAIN);
+  lv_obj_align_to(label, logo, LV_ALIGN_BOTTOM_MID, 0, 50);
 
-  std::vector<String> files = Player::getAllFiles();
+  lv_obj_t * cancel_button = lv_button_create(container);
+  lv_obj_set_style_bg_color(cancel_button, yellow, LV_PART_MAIN);
+  lv_obj_align(cancel_button, LV_ALIGN_BOTTOM_MID, 0, -30);
 
-  for (int i = 0; i < files.size(); i++) {
-    int filePos = i;
-    lv_obj_t * btn = lv_list_add_button(file_list, LV_SYMBOL_AUDIO, files.at(i).c_str());
-    lv_obj_add_event_cb(btn, fileSelected, LV_EVENT_CLICKED, NULL);
-    lv_obj_set_style_bg_color(btn, white, LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(btn, 29, LV_PART_MAIN);
-    lv_obj_set_style_radius(btn, 8, LV_PART_MAIN);
-    lv_obj_set_style_text_color(btn, white, LV_PART_MAIN);
-    lv_obj_set_style_text_font(btn, &fnt_sora_medium_16, LV_PART_MAIN);
-    lv_obj_set_style_margin_ver(btn, 6, LV_PART_MAIN);
-    lv_obj_set_style_pad_ver(btn, 15, LV_PART_MAIN);
-    
-    lv_obj_set_style_border_width(btn, 0, LV_PART_MAIN);
-  }
-  mainFileList = file_list;
+  lv_obj_t * button_text = lv_label_create(cancel_button);
+  lv_obj_set_style_text_color(button_text, white, LV_PART_MAIN);
+  lv_label_set_text(button_text, "Cancel");
+  lv_obj_add_event_cb(cancel_button, cancel_write, LV_EVENT_CLICKED, NULL);
+  
 
+  mainFileList = NULL;
+
+  writing = true;
+  fileToWrite = te;
 
   lv_screen_load(container);
+}
+
+
+static void back_event_handler(lv_event_t * e) {
+  lv_obj_t * obj = lv_event_get_target_obj(e);
+  lv_obj_t * menu = (lv_obj_t *)lv_event_get_user_data(e);
+  if (lv_menu_back_button_is_root(menu, obj)) {
+    scanCard();
+  }
+}
+
+typedef enum {
+    LV_MENU_ITEM_BUILDER_VARIANT_1,
+    LV_MENU_ITEM_BUILDER_VARIANT_2
+} lv_menu_builder_variant_t;
+
+static lv_obj_t * create_text(lv_obj_t * parent, const char * icon, const char * txt, lv_menu_builder_variant_t builder_variant) {
+    lv_obj_t * obj = lv_menu_cont_create(parent);
+
+    lv_obj_t * img = NULL;
+    lv_obj_t * label = NULL;
+
+    if(icon) {
+        img = lv_image_create(obj);
+        lv_image_set_src(img, icon);
+    }
+
+    if(txt) {
+        label = lv_label_create(obj);
+        lv_label_set_text(label, txt);
+        lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_SCROLL_CIRCULAR);
+        lv_obj_set_flex_grow(label, 1);
+    }
+
+    if(builder_variant == LV_MENU_ITEM_BUILDER_VARIANT_2 && icon && txt) {
+        lv_obj_add_flag(img, LV_OBJ_FLAG_FLEX_IN_NEW_TRACK);
+        lv_obj_swap(img, label);
+    }
+
+    return obj;
+}
+
+static lv_obj_t * create_slider(lv_obj_t * parent, const char * icon, const char * txt, int32_t min, int32_t max, int32_t val) {
+    lv_obj_t * obj = create_text(parent, icon, txt, LV_MENU_ITEM_BUILDER_VARIANT_2);
+
+    lv_obj_t * slider = lv_slider_create(obj);
+    lv_obj_set_flex_grow(slider, 1);
+    lv_slider_set_range(slider, min, max);
+    lv_slider_set_value(slider, val, false);
+
+    if(icon == NULL) {
+        lv_obj_add_flag(slider, LV_OBJ_FLAG_FLEX_IN_NEW_TRACK);
+    }
+
+    return obj;
+}
+
+lv_obj_t * menu_container;
+lv_obj_t * files_menu_page;
+
+void showMenu() {
+  lv_obj_t * container = lv_obj_create(NULL);
+  lv_obj_t * menu = lv_menu_create(container);
+
+  //size menu
+  lv_obj_set_size(menu, lv_display_get_horizontal_resolution(NULL), lv_display_get_vertical_resolution(NULL));
+  lv_obj_center(menu);
+
+  //edit header to add back button
+  lv_menu_set_mode_root_back_button(menu, LV_MENU_ROOT_BACK_BUTTON_ENABLED);
+  lv_obj_add_event_cb(menu, back_event_handler, LV_EVENT_CLICKED, menu);
+
+  //
+  lv_obj_t * cont;
+  lv_obj_t * label;
+
+  lv_obj_t * main_page = lv_menu_page_create(menu, NULL);
+
+  //files menu
+  files_menu_page = lv_menu_page_create(menu, "Files on SD card");
+  cont = lv_menu_cont_create(files_menu_page);
+
+  std::vector<String> files = Player::getAllFiles();
+  for (int i = 0; i < files.size(); i++) {
+    int filePos = i;
+    label = lv_label_create(cont);
+    lv_label_set_text(label, files.at(i).c_str());
+    lv_obj_add_event_cb(label, fileSelected, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_flag(label, LV_OBJ_FLAG_CLICKABLE);
+    //some sort of callback goes here
+  }
+
+  //system settings menu
+  lv_obj_t * system_settings_page = lv_menu_page_create(menu, "System settings");
+  cont = lv_menu_cont_create(system_settings_page);
+  create_slider(cont, LV_SYMBOL_VOLUME_MID, "Volume", 0, 21, 16);
+
+  //main page items
+  cont = lv_menu_cont_create(main_page);
+  label = lv_label_create(cont);
+  lv_label_set_text(label, "Write a new card");
+  lv_menu_set_load_page_event(menu, cont, files_menu_page);
+
+  cont = lv_menu_cont_create(main_page);
+  label = lv_label_create(cont);
+  lv_label_set_text(label, "System settings");
+  lv_menu_set_load_page_event(menu, cont, system_settings_page);
+
+  lv_menu_set_page(menu, main_page);
+
+  //menu_container = container;
+  lv_screen_load(container);
+
+  
 }
 
 void setupDisplay() {
@@ -668,7 +745,7 @@ void loop() {
   if (nextElapsedTick > 0 && millis() > nextElapsedTick) {
     elapsed++;
     nextElapsedTick += 1000;
-    lv_bar_set_value(progressBar, elapsed, LV_ANIM_OFF);
+    lv_bar_set_value(progressBar, elapsed, false);
   }
 
   lv_timer_handler();
@@ -676,6 +753,11 @@ void loop() {
   if (lastTouch && millis() > lastTouch + (SCREEN_OFF_DELAY * 1000)) {
     //turn off the screen
     digitalWrite(TFT_BL, LOW);
+
+    writing = 0;
+    scanCard();
+    fileToWrite = "";
+
     lastTouch = 0;
   }
 
