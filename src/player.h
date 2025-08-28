@@ -26,6 +26,9 @@ namespace Player {
     bool stop();
     bool pause();
 
+    uint getVolume();
+    void setVolume(uint newVol);
+
     bool isPlaying();
 
     void registerMDCallback(mdCallback);

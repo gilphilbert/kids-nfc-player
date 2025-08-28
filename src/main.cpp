@@ -1,4 +1,7 @@
 #include <Arduino.h>
+#include <Preferences.h>
+Preferences preferences;
+
 
 #include "player.h"
 
@@ -68,7 +71,7 @@ static uint32_t my_tick(void) {
 FT6336U ft6336u(I2C_SDA, I2C_SCL, RST_N_PIN, INT_N_PIN);
 
 unsigned long last_touches[2] = {0, 0};
-
+lv_indev_state_t last_state;
 
 void my_touchpad_read( lv_indev_t * indev, lv_indev_data_t * data ) {
   FT6336U_TouchPointType tp = ft6336u.scan();
@@ -97,16 +100,6 @@ void my_touchpad_read( lv_indev_t * indev, lv_indev_data_t * data ) {
     if (!Player::isPlaying()) {
       lastTouch = millis(); //need this to turn the display off
     }
-
-    if (last_touches[1] > 0 && millis() - last_touches[1] < 500) {
-      //triple-tap!
-      Serial.println("Triple-tap");
-      if (!Player::isPlaying())
-        //displayFileList();
-        showMenu();
-    }
-    last_touches[1] = last_touches[0];
-    last_touches[0] = millis();
   } else {
     data->state = LV_INDEV_STATE_RELEASED;
   }
@@ -208,6 +201,11 @@ bool writeCard() {
 // -----------------------//
 //           TFT          //
 // -----------------------//
+
+static void show_menu(lv_event_t * e) {
+  showMenu();
+}
+
 void scanCard() {
   lv_obj_t * container = lv_obj_create(NULL);
 
@@ -231,7 +229,12 @@ void scanCard() {
   lv_obj_set_style_text_color(label, white, LV_PART_MAIN);
   lv_obj_align_to(label, card, LV_ALIGN_BOTTOM_MID, 0, 50);
 
-  //lv_screen_load_anim(container, LV_SCR_LOAD_ANIM_OVER_TOP, 200, 0, true);
+  lv_obj_t * settings_icon = lv_img_create(container);
+  lv_img_set_src(settings_icon, &img_stop);
+  lv_obj_add_flag(settings_icon, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_align(settings_icon, LV_ALIGN_TOP_RIGHT, -20, 20);
+  lv_obj_add_event_cb(settings_icon, show_menu, LV_EVENT_LONG_PRESSED, NULL);
+
   lv_screen_load(container);
 }
 
@@ -502,6 +505,15 @@ static void back_event_handler(lv_event_t * e) {
   }
 }
 
+static void vol_change(lv_event_t * e) {
+  lv_obj_t * obj = lv_event_get_target_obj(e);
+  lv_obj_t * slider = (lv_obj_t *)lv_event_get_user_data(e);
+  uint set_vol = lv_slider_get_value(slider);
+  Serial.println(set_vol);
+  Player::setVolume(set_vol);
+  preferences.putUInt("volume", set_vol);
+}
+
 typedef enum {
     LV_MENU_ITEM_BUILDER_VARIANT_1,
     LV_MENU_ITEM_BUILDER_VARIANT_2
@@ -533,27 +545,13 @@ static lv_obj_t * create_text(lv_obj_t * parent, const char * icon, const char *
     return obj;
 }
 
-static lv_obj_t * create_slider(lv_obj_t * parent, const char * icon, const char * txt, int32_t min, int32_t max, int32_t val) {
-    lv_obj_t * obj = create_text(parent, icon, txt, LV_MENU_ITEM_BUILDER_VARIANT_2);
-
-    lv_obj_t * slider = lv_slider_create(obj);
-    lv_obj_set_flex_grow(slider, 1);
-    lv_slider_set_range(slider, min, max);
-    lv_slider_set_value(slider, val, false);
-
-    if(icon == NULL) {
-        lv_obj_add_flag(slider, LV_OBJ_FLAG_FLEX_IN_NEW_TRACK);
-    }
-
-    return obj;
-}
-
 lv_obj_t * menu_container;
 lv_obj_t * files_menu_page;
 
 void showMenu() {
-  lv_obj_t * container = lv_obj_create(NULL);
-  lv_obj_t * menu = lv_menu_create(container);
+  //lv_obj_t * container = lv_obj_create(NULL);
+  lv_obj_t * menu = lv_menu_create(NULL);
+  //lv_obj_set_style_bg_color(menu, red, LV_PART_MAIN);
 
   //size menu
   lv_obj_set_size(menu, lv_display_get_horizontal_resolution(NULL), lv_display_get_vertical_resolution(NULL));
@@ -562,6 +560,9 @@ void showMenu() {
   //edit header to add back button
   lv_menu_set_mode_root_back_button(menu, LV_MENU_ROOT_BACK_BUTTON_ENABLED);
   lv_obj_add_event_cb(menu, back_event_handler, LV_EVENT_CLICKED, menu);
+  lv_obj_t * back_btn = lv_menu_get_main_header_back_button(menu);
+  lv_obj_t * back_button_label = lv_label_create(back_btn);
+  lv_label_set_text(back_button_label, "Back");
 
   //
   lv_obj_t * cont;
@@ -570,7 +571,7 @@ void showMenu() {
   lv_obj_t * main_page = lv_menu_page_create(menu, NULL);
 
   //files menu
-  files_menu_page = lv_menu_page_create(menu, "Files on SD card");
+  files_menu_page = lv_menu_page_create(menu, "Select a file to write a NFC card");
   cont = lv_menu_cont_create(files_menu_page);
 
   std::vector<String> files = Player::getAllFiles();
@@ -580,29 +581,41 @@ void showMenu() {
     lv_label_set_text(label, files.at(i).c_str());
     lv_obj_add_event_cb(label, fileSelected, LV_EVENT_CLICKED, NULL);
     lv_obj_add_flag(label, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_margin_top(label, 8, LV_PART_MAIN);
+    lv_obj_set_style_margin_bottom(label, 8, LV_PART_MAIN);
     //some sort of callback goes here
   }
 
   //system settings menu
   lv_obj_t * system_settings_page = lv_menu_page_create(menu, "System settings");
   cont = lv_menu_cont_create(system_settings_page);
-  create_slider(cont, LV_SYMBOL_VOLUME_MID, "Volume", 0, 21, 16);
+
+  lv_obj_t * obj = create_text(system_settings_page, LV_SYMBOL_VOLUME_MID, "Volume", LV_MENU_ITEM_BUILDER_VARIANT_2);
+  lv_obj_t * slider = lv_slider_create(obj);
+  lv_obj_set_flex_grow(slider, 1);
+  lv_slider_set_range(slider, 1, 21);
+  lv_slider_set_value(slider, Player::getVolume(), false);
+  lv_obj_add_event_cb(slider, vol_change, LV_EVENT_RELEASED, slider);
 
   //main page items
   cont = lv_menu_cont_create(main_page);
   label = lv_label_create(cont);
   lv_label_set_text(label, "Write a new card");
   lv_menu_set_load_page_event(menu, cont, files_menu_page);
+  lv_obj_set_style_margin_top(label, 8, LV_PART_MAIN);
+  lv_obj_set_style_margin_bottom(label, 8, LV_PART_MAIN);
 
   cont = lv_menu_cont_create(main_page);
   label = lv_label_create(cont);
   lv_label_set_text(label, "System settings");
+  lv_obj_set_style_margin_top(label, 8, LV_PART_MAIN);
+  lv_obj_set_style_margin_bottom(label, 8, LV_PART_MAIN);
   lv_menu_set_load_page_event(menu, cont, system_settings_page);
 
   lv_menu_set_page(menu, main_page);
 
   //menu_container = container;
-  lv_screen_load(container);
+  lv_screen_load(menu);
 
   
 }
@@ -668,11 +681,13 @@ void setup() {
   nfc_spi.begin(NFC_CLK, NFC_MISO, NFC_MOSI, NFC_SS);
   nfc.begin();
 
+  preferences.begin("kids_nfc_player", false);
+
   bool cardFound = Player::init(); //if this returns false, the SD card couldn't be opened!
   Player::registerMDCallback(trackMetadataHandler);
   Player::registerStateCallback(playStateChanged);
 
-  //delay(1000);
+  Player::setVolume(preferences.getUInt("volume", 16));
 
   setupDisplay();
   elapsed = 0;

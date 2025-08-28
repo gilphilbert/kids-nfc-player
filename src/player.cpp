@@ -327,6 +327,16 @@ bool Player::pause() {
     return RX.ret;
 }
 
+uint Player::getVolume() {
+    return audioGetVolume();
+}
+
+void Player::setVolume(uint newVol) {
+    audioSetVolume(newVol);
+}
+
+
+
 std::vector<String> Player::getAllFiles() {
     std::vector<String> files;
     File root = SD_MMC.open("/");

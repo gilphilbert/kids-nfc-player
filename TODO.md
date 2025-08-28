@@ -1,4 +1,13 @@
-- set volume
-- pause button (icon change)
-- test tone functions
-- scrolling when selecting a song to write to a card resets the ESP > switch from list to menu? Would be good to handle volume, screen brightness, timeout, etc.
+### aesthetics
+- settings icon (small)
+- menu styling
+
+### main functionality
+- pause button icon change
+
+### settings
+- change tone?
+- screen brightness
+- move system settings to the main menu page? Not sure we need a separate page
+- password protection?
+- screen timeout (sleep)?
